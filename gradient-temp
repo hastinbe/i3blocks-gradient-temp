@@ -1,0 +1,256 @@
+#!/usr/bin/env bash
+#
+#  gradient-temp
+#
+#  A temperature indicator for i3blocks, colored according to heat
+#
+#  Requires:
+#    awk (POSIX compatible)
+#    bc
+#    lm_sensors
+#
+#  Optional:
+#    fonts-font-awesome
+#
+#  Copyright (c) 2018 Beau Hastings. All rights reserved
+#  License: GNU General Public License v2
+#
+#  Author: Beau Hastings <beausy@gmail.com>
+#  URL: https://github.com/hastinbe/i3blocks-gradient-temp
+
+FONT=${FONT:-"FontAwesome"}
+SENSOR=${SENSOR:-$BLOCK_INSTANCE}
+GRADIENT=${GRADIENT:-true}
+FAHRENHEIT=${FAHRENHEIT:-false}
+COLOR_TEMP=${COLOR_TEMP:-"white"}
+COLOR_GRADIENT_START=${COLOR_GRADIENT_START:-"#0000FF"}
+COLOR_GRADIENT_END=${COLOR_GRADIENT_END:-"#FF0000"}
+SYMBOL_C=${SYMBOL_C:-"&#x2103;"}
+SYMBOL_F=${SYMBOL_F:-"&#x2109;"}
+
+temp() {
+    local temp=$(subfeature_f 'temp1_input')
+    if $FAHRENHEIT; then temp=$(deg_ctof $temp); fi
+    echo $temp
+}
+
+temp_max() {
+    local temp=$(subfeature_f 'temp1_max')
+    if $FAHRENHEIT; then temp=$(deg_ctof $temp); fi
+    echo $temp
+}
+
+temp_crit() {
+    local temp=$(subfeature_f 'temp1_crit')
+    if $FAHRENHEIT; then temp=$(deg_ctof $temp); fi
+    echo $temp
+}
+
+subfeature_f() {
+    echo "$SENSORS" | awk -W posix "/$1/ {printf \"%.1f\", \$2; exit}"
+}
+
+min() {
+    echo "if ($1 < $2) $1 else $2" | bc
+}
+
+max() {
+    echo "if ($1 > $2) $1 else $2" | bc
+}
+
+clamp() {
+    echo $(min $(max $1 $2) $3)
+}
+
+deg_ctof() {
+    echo 'scale=1; $1 * (9 / 5) + 32' | bc
+}
+
+temp_symbol() {
+    if $FAHRENHEIT; then
+        echo $SYMBOL_F
+    else
+        echo $SYMBOL_C
+    fi
+}
+
+# Interpolate between 2 RGB colors
+#
+# Arguments:
+#   $1 - Color to interpolate from, as a hex triplet prefixed with #
+#   $2 - Color to interpolate to, as a hex triplet prefixed with #
+#   $3 - Amount of steps needed to get from start to end color
+interpolate_rgb() {
+    local -i steps=$3
+    local -a colors
+
+    printf -v startR "%d" 0x${1:1:2}
+    printf -v startG "%d" 0x${1:3:2}
+    printf -v startB "%d" 0x${1:5:2}
+    printf -v endR "%d" 0x${2:1:2}
+    printf -v endG "%d" 0x${2:3:2}
+    printf -v endB "%d" 0x${2:5:2}
+
+    stepR=$(( ($endR - $startR) / $steps ))
+    stepG=$(( ($endG - $startG) / $steps ))
+    stepB=$(( ($endB - $startB) / $steps ))
+
+    for i in $(seq 0 $steps); do
+        local -i R=$(( $startR + ($stepR * $i) ))
+        local -i G=$(( $startG + ($stepG * $i) ))
+        local -i B=$(( $startB + ($stepB * $i) ))
+
+        colors+=( "$(printf "#%02x%02x%02x\n" $R $G $B)" )
+    done
+
+    colors+=( "$(printf "#%02x%02x%02x\n" $endR $endB $endG)" )
+
+    echo "${colors[@]}"
+}
+
+# Get color for the given temperature
+#
+# Arguments:
+#   $1 - The temperature
+#   $2 - Maximum temperature
+temp_color() {
+    local colors=( $(interpolate_rgb "$COLOR_GRADIENT_START" "$COLOR_GRADIENT_END" 10) )
+
+    if [ -n "$2" ]; then
+        echo $(plookup $1 $2 ${colors[@]})
+    fi
+}
+
+# Retrieve an item from the provided lookup table based on the percentage of a number
+#
+# Arguments:
+#   $1 - A number
+#   $2 - Number to get a percentage of
+#   $3 - An array of potential values
+plookup() {
+    if [ -z "$2" -o -z "$3" ]; then
+        return
+    fi
+
+    local table=( ${@:3} )
+    local number2=${2%.*}
+    local temp=$(min ${1%.*} $number2)
+    local percent_max=$(( $temp * $number2 / 100 ))
+    local index=$(( $percent_max * ${#table[@]} / 100 ))
+
+    index=$(clamp $index 0 $(( ${#table[@]} - 1 )) )
+
+    echo ${table[$index]}
+}
+
+# Output text wrapped in a span element
+#
+# Options:
+#   -c <color>  To specify a text color
+#
+# Arguments:
+#   $1 or $3 - String to encapsulate within a span
+span() {
+    local -A attribs
+    local text="$*"
+
+    if [ -n "$FONT" ]; then attribs[font]="$FONT"; fi
+
+    if [ "$1" = "-c" ]; then
+        attribs[color]="$2"
+        text="${*:3}"
+    fi
+
+    echo "<span$(build_attribs attribs)>$text</span>"
+}
+
+# Builds html element attributes
+#
+# Arguments:
+#   $1 - An associative array of attribute-value pairs
+build_attribs() {
+    local -n array=$1
+    for k in "${!array[@]}"; do
+        echo -n " $k='${array[$k]}'"
+    done
+    echo
+}
+
+# Colors text using either the first or second color
+#
+# Arguments:
+#   $1 - Text
+#   $2 - Color to use if toggle is false
+#   $3 - Color to use if toggle is true
+#   $4 - A boolean used to toggle between colors
+#
+# Returns:
+#   The colored text
+multicolor() {
+    local color="$2"
+    local toggle=$4
+
+    if $toggle && [ -n "$3" ]; then
+        color="$3"
+    fi
+
+    if [ -n "$color" ]; then
+        echo "$(span -c "$color" "$1")"
+    else
+        echo "$(span "$1")"
+    fi
+}
+
+# Display program usage
+usage() {
+    echo -e "Usage: $0 [options]
+Display a temperature indicator using lm_sensors for i3blocks.\n
+Options:
+  -s\t\t\tsensor to query
+  -f\t\t\tdisplay temperatures in fahrenheit
+  -G\t\t\tdisable color gradient
+  -h\t\t\tdisplay this help and exit
+" 1>&2
+    exit 1
+}
+
+temp_gt_eq() {
+    (( ${1%.*} >= ${2%.*} ))
+}
+
+###############################################################################
+
+while getopts "C:E:f:F:GhHs:S:t:" o; do
+    case "$o" in
+        C) SYMBOL_C="${OPTARG}" ;;
+        E) COLOR_GRADIENT_END="${OPTARG}" ;;
+        f) FONT="${OPTARG}" ;;
+        F) SYMBOL_F="${OPTARG}" ;;
+        G) GRADIENT=false ;;
+        H) FAHRENHEIT=true ;;
+        s) SENSOR="${OPTARG}" ;;
+        S) COLOR_GRADIENT_START="${OPTARG}" ;;
+        t) COLOR_TEMP="${OPTARG}" ;;
+        h | *) usage ;;
+    esac
+done
+shift $((OPTIND-1)) # Shift off options and optional --
+
+if [ -z "$SENSOR" ]; then
+    echo "No sensor defined"
+    exit 1
+fi
+
+SENSORS=$(sensors -u $SENSOR)
+temp=$(temp)
+temp_max=$(temp_max)
+temp_crit=$(temp_crit)
+temp_color=$(temp_color $temp $temp_max)
+colored_temp=$(multicolor "${temp}$(temp_symbol)" "$COLOR_TEMP" "$temp_color" $GRADIENT)
+
+echo -e "$colored_temp\n$colored_temp\n"
+
+[ $(temp_gt_eq "$temp" "$temp_crit") ] && exit 33
+[ $(temp_gt_eq "$temp" "$temp_max") ] && exit 33
+
+exit 0
