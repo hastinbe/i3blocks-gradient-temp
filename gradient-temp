@@ -250,7 +250,7 @@ colored_temp=$(multicolor "${temp}$(temp_symbol)" "$COLOR_TEMP" "$temp_color" $G
 
 echo -e "$colored_temp\n$colored_temp\n"
 
-[ $(temp_gt_eq "$temp" "$temp_crit") ] && exit 33
-[ $(temp_gt_eq "$temp" "$temp_max") ] && exit 33
+[[ -v $temp_crit && $(temp_gt_eq "$temp" "$temp_crit") ]] && exit 33
+[[ -v $temp_max && $(temp_gt_eq "$temp" "$temp_max") ]] && exit 34
 
 exit 0
