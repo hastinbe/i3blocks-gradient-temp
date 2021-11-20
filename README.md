@@ -56,6 +56,8 @@ COLOR_GRADIENT_START | string | -S &lt;#color&gt; | Start color for gradient; Mu
 COLOR_GRADIENT_END | string | -E &lt;#color&gt; | End color for gradient; Must be a hex triplet prefixed with #
 SYMBOL_C | string | -C &lt;symbol&gt; | Symbol for celsius
 SYMBOL_F | string | -F &lt;symbol&gt; | Symbol for fahrenheit
+OVERRIDE_CRIT_TEMP | float | -c &lt;temp&gt; | Override critical temperature
+OVERRIDE_MAX_TEMP | float | -m &lt;temp&gt; | Override maximum temperature
 
 ## License
 
