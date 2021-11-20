@@ -30,20 +30,20 @@ SYMBOL_F=${SYMBOL_F:-"&#x2109;"}
 
 temp() {
     local temp=$(subfeature_f 'temp1_input')
-    if $FAHRENHEIT; then temp=$(deg_ctof $temp); fi
-    echo $temp
+    if $FAHRENHEIT; then temp=$(deg_ctof "$temp"); fi
+    echo "$temp"
 }
 
 temp_max() {
     local temp=$(subfeature_f 'temp1_max')
-    if $FAHRENHEIT; then temp=$(deg_ctof $temp); fi
-    echo $temp
+    if $FAHRENHEIT; then temp=$(deg_ctof "$temp"); fi
+    echo "$temp"
 }
 
 temp_crit() {
     local temp=$(subfeature_f 'temp1_crit')
-    if $FAHRENHEIT; then temp=$(deg_ctof $temp); fi
-    echo $temp
+    if $FAHRENHEIT; then temp=$(deg_ctof "$temp"); fi
+    echo "$temp"
 }
 
 subfeature_f() {
@@ -59,7 +59,7 @@ max() {
 }
 
 clamp() {
-    echo $(min $(max $1 $2) $3)
+    echo "$(min "$(max "$1" "$2")" "$3")"
 }
 
 deg_ctof() {
@@ -68,9 +68,9 @@ deg_ctof() {
 
 temp_symbol() {
     if $FAHRENHEIT; then
-        echo $SYMBOL_F
+        echo "$SYMBOL_F"
     else
-        echo $SYMBOL_C
+        echo "$SYMBOL_C"
     fi
 }
 
@@ -84,18 +84,18 @@ interpolate_rgb() {
     local -i steps=$3
     local -a colors
 
-    printf -v startR "%d" 0x${1:1:2}
-    printf -v startG "%d" 0x${1:3:2}
-    printf -v startB "%d" 0x${1:5:2}
-    printf -v endR "%d" 0x${2:1:2}
-    printf -v endG "%d" 0x${2:3:2}
-    printf -v endB "%d" 0x${2:5:2}
+    printf -v startR "%d" "0x${1:1:2}"
+    printf -v startG "%d" "0x${1:3:2}"
+    printf -v startB "%d" "0x${1:5:2}"
+    printf -v endR "%d" "0x${2:1:2}"
+    printf -v endG "%d" "0x${2:3:2}"
+    printf -v endB "%d" "0x${2:5:2}"
 
     stepR=$(( ($endR - $startR) / $steps ))
     stepG=$(( ($endG - $startG) / $steps ))
     stepB=$(( ($endB - $startB) / $steps ))
 
-    for i in $(seq 0 $steps); do
+    for i in $(seq 0 "$steps"); do
         local -i R=$(( $startR + ($stepR * $i) ))
         local -i G=$(( $startG + ($stepG * $i) ))
         local -i B=$(( $startB + ($stepB * $i) ))
@@ -103,7 +103,7 @@ interpolate_rgb() {
         colors+=( "$(printf "#%02x%02x%02x\n" $R $G $B)" )
     done
 
-    colors+=( "$(printf "#%02x%02x%02x\n" $endR $endG $endB)" )
+    colors+=( "$(printf "#%02x%02x%02x\n" "$endR" "$endG" "$endB")" )
 
     echo "${colors[@]}"
 }
@@ -117,7 +117,7 @@ temp_color() {
     local colors=( $(interpolate_rgb "$COLOR_GRADIENT_START" "$COLOR_GRADIENT_END" 10) )
 
     if [ -n "$2" ]; then
-        echo $(plookup $1 $2 ${colors[@]})
+        echo "$(plookup "$1" "$2" "${colors[@]}")"
     fi
 }
 
@@ -132,15 +132,15 @@ plookup() {
         return
     fi
 
-    local table=( ${@:3} )
+    local table=( "${@:3}" )
     local number2=${2%.*}
-    local temp=$(min ${1%.*} $number2)
+    local temp=$(min "${1%.*}" "$number2")
     local percent_max=$(( $temp * $number2 / 100 ))
     local index=$(( $percent_max * ${#table[@]} / 100 ))
 
     index=$(clamp $index 0 $(( ${#table[@]} - 1 )) )
 
-    echo ${table[$index]}
+    echo "${table[$index]}"
 }
 
 # Output text wrapped in a span element
@@ -241,11 +241,11 @@ if [ -z "$SENSOR" ]; then
     exit 1
 fi
 
-SENSORS=$(sensors -u $SENSOR)
+SENSORS=$(sensors -u "$SENSOR")
 temp=$(temp)
 temp_max=$(temp_max)
 temp_crit=$(temp_crit)
-temp_color=$(temp_color $temp $temp_max)
+temp_color=$(temp_color "$temp" "$temp_max")
 colored_temp=$(multicolor "${temp}$(temp_symbol)" "$COLOR_TEMP" "$temp_color" $GRADIENT)
 
 echo -e "$colored_temp\n$colored_temp\n"
