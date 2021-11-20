@@ -167,6 +167,7 @@ span() {
     if [ -n "$FONT" ]; then attribs[font]="$FONT"; fi
 
     if [ "$1" = "-c" ]; then
+        # shellcheck disable=SC2034
         attribs[color]="$2"
         text="${*:3}"
     fi
