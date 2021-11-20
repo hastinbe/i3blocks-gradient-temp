@@ -137,7 +137,7 @@ temp_color() {
 #   $2 - Number to get a percentage of
 #   $3 - An array of potential values
 plookup() {
-    if [ -z "$2" -o -z "$3" ]; then
+    if [ -z "$2" ] || [ -z "$3" ]; then
         return
     fi
 
