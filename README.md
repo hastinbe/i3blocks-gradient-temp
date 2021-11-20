@@ -16,6 +16,20 @@ A temperature indicator for [i3blocks], colored according to heat.
 #### Optional
 * fonts-font-awesome
 
+### Command-line options
+```
+Usage: ./gradient-temp [options]
+Display a temperature indicator using lm_sensors for i3blocks.
+
+Options:
+  -s			sensor to query
+  -f			display temperatures in fahrenheit
+  -G			disable color gradient
+  -c <temp>		override critical temperature
+  -m <temp>		override maximum temperature
+  -h			display this help and exit
+```
+
 ### Guide
 Copy the blocklet configuration in the given `i3blocks.conf` into your [i3blocks] configuration file, the recommended config is:
 
