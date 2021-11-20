@@ -123,7 +123,9 @@ interpolate_rgb() {
 #   $1 - The temperature
 #   $2 - Maximum temperature
 temp_color() {
-    local colors=( $(interpolate_rgb "$COLOR_GRADIENT_START" "$COLOR_GRADIENT_END" 10) )
+    local colors
+
+    read -ra colors <<< "$(interpolate_rgb "$COLOR_GRADIENT_START" "$COLOR_GRADIENT_END" 10)"
 
     if [ -n "$2" ]; then
         plookup "$1" "$2" "${colors[@]}"
