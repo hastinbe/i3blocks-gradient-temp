@@ -195,9 +195,9 @@ multicolor() {
     fi
 
     if [ -n "$color" ]; then
-        echo "$(span -c "$color" "$1")"
+        span -c "$color" "$1"
     else
-        echo "$(span "$1")"
+        span "$1"
     fi
 }
 
