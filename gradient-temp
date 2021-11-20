@@ -59,7 +59,7 @@ max() {
 }
 
 clamp() {
-    echo "$(min "$(max "$1" "$2")" "$3")"
+    "$(min "$(max "$1" "$2")" "$3")"
 }
 
 deg_ctof() {
@@ -117,7 +117,7 @@ temp_color() {
     local colors=( $(interpolate_rgb "$COLOR_GRADIENT_START" "$COLOR_GRADIENT_END" 10) )
 
     if [ -n "$2" ]; then
-        echo "$(plookup "$1" "$2" "${colors[@]}")"
+        "$(plookup "$1" "$2" "${colors[@]}")"
     fi
 }
 
