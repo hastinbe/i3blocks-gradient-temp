@@ -35,6 +35,7 @@ instance=__REPLACE_ME__
 #COLOR_GRADIENT_END=#FF0000
 #SYMBOL_C=&#x2103;
 #SYMBOL_F=&#x2109;
+#OVERRIDE_CRIT_TEMP=90
 ```
 
 Set the `instance` variable to the sensor to monitor, see `sensors -u`.

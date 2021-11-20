@@ -222,6 +222,7 @@ Options:
   -s\t\t\tsensor to query
   -f\t\t\tdisplay temperatures in fahrenheit
   -G\t\t\tdisable color gradient
+  -c <temp>\t\toverride critical temperature
   -h\t\t\tdisplay this help and exit
 " 1>&2
     exit 1
@@ -233,8 +234,9 @@ temp_gt_eq() {
 
 ###############################################################################
 
-while getopts "C:E:f:F:GhHs:S:t:" o; do
+while getopts "c:C:E:f:F:GhHs:S:t:" o; do
     case "$o" in
+        c) OVERRIDE_CRIT_TEMP="${OPTARG}" ;;
         C) SYMBOL_C="${OPTARG}" ;;
         E) COLOR_GRADIENT_END="${OPTARG}" ;;
         f) FONT="${OPTARG}" ;;
@@ -257,7 +259,13 @@ fi
 SENSORS=$(sensors -u "$SENSOR")
 temp=$(temp)
 temp_max=$(temp_max)
-temp_crit=$(temp_crit)
+
+if [[ -v OVERRIDE_CRIT_TEMP ]]; then
+  temp_crit="$OVERRIDE_CRIT_TEMP"
+else 
+  temp_crit=$(temp_crit)
+fi
+
 temp_color=$(temp_color "$temp" "$temp_max")
 colored_temp=$(multicolor "${temp}$(temp_symbol)" "$COLOR_TEMP" "$temp_color" $GRADIENT)
 
