@@ -29,20 +29,29 @@ SYMBOL_C=${SYMBOL_C:-"&#x2103;"}
 SYMBOL_F=${SYMBOL_F:-"&#x2109;"}
 
 temp() {
-    local temp=$(subfeature_f 'temp1_input')
+    local temp
+    temp=$(subfeature_f 'temp1_input')
+
     if $FAHRENHEIT; then temp=$(deg_ctof "$temp"); fi
+    
     echo "$temp"
 }
 
 temp_max() {
-    local temp=$(subfeature_f 'temp1_max')
+    local temp
+    temp=$(subfeature_f 'temp1_max')
+
     if $FAHRENHEIT; then temp=$(deg_ctof "$temp"); fi
+    
     echo "$temp"
 }
 
 temp_crit() {
-    local temp=$(subfeature_f 'temp1_crit')
+    local temp
+    temp=$(subfeature_f 'temp1_crit')
+
     if $FAHRENHEIT; then temp=$(deg_ctof "$temp"); fi
+
     echo "$temp"
 }
 
@@ -134,7 +143,8 @@ plookup() {
 
     local table=( "${@:3}" )
     local number2=${2%.*}
-    local temp=$(min "${1%.*}" "$number2")
+    local temp
+    temp=$(min "${1%.*}" "$number2")
     local percent_max=$(( temp * number2 / 100 ))
     local index=$(( percent_max * ${#table[@]} / 100 ))
 
