@@ -223,6 +223,7 @@ Options:
   -f\t\t\tdisplay temperatures in fahrenheit
   -G\t\t\tdisable color gradient
   -c <temp>\t\toverride critical temperature
+  -m <temp>\t\toverride maximum temperature
   -h\t\t\tdisplay this help and exit
 " 1>&2
     exit 1
@@ -234,7 +235,7 @@ temp_gt_eq() {
 
 ###############################################################################
 
-while getopts "c:C:E:f:F:GhHs:S:t:" o; do
+while getopts "c:C:E:f:F:GhHm:s:S:t:" o; do
     case "$o" in
         c) OVERRIDE_CRIT_TEMP="${OPTARG}" ;;
         C) SYMBOL_C="${OPTARG}" ;;
@@ -243,6 +244,7 @@ while getopts "c:C:E:f:F:GhHs:S:t:" o; do
         F) SYMBOL_F="${OPTARG}" ;;
         G) GRADIENT=false ;;
         H) FAHRENHEIT=true ;;
+        m) OVERRIDE_MAX_TEMP="${OPTARG}" ;;
         s) SENSOR="${OPTARG}" ;;
         S) COLOR_GRADIENT_START="${OPTARG}" ;;
         t) COLOR_TEMP="${OPTARG}" ;;
@@ -258,7 +260,12 @@ fi
 
 SENSORS=$(sensors -u "$SENSOR")
 temp=$(temp)
-temp_max=$(temp_max)
+
+if [[ -v OVERRIDE_MAX_TEMP ]]; then
+  temp_max="$OVERRIDE_MAX_TEMP"
+else 
+  temp_max=$(temp_max)
+fi
 
 if [[ -v OVERRIDE_CRIT_TEMP ]]; then
   temp_crit="$OVERRIDE_CRIT_TEMP"

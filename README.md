@@ -36,6 +36,7 @@ instance=__REPLACE_ME__
 #SYMBOL_C=&#x2103;
 #SYMBOL_F=&#x2109;
 #OVERRIDE_CRIT_TEMP=90
+#OVERRIDE_MAX_TEMP=100
 ```
 
 Set the `instance` variable to the sensor to monitor, see `sensors -u`.
