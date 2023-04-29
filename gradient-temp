@@ -6,7 +6,6 @@
 #
 #  Requires:
 #    awk (POSIX compatible)
-#    bc
 #    lm_sensors
 #
 #  Optional:
@@ -28,12 +27,61 @@ COLOR_GRADIENT_END=${COLOR_GRADIENT_END:-"#FF0000"}
 SYMBOL_C=${SYMBOL_C:-"&#x2103;"}
 SYMBOL_F=${SYMBOL_F:-"&#x2109;"}
 
+define_helpers() {
+    empty() {
+        [[ -z $1 ]]
+    }
+
+    not_empty() {
+        [[ -n $1 ]]
+    }
+
+    isset() {
+        [[ -v $1 ]]
+    }
+
+    error() {
+        echo "$COLOR_RED$*$COLOR_RESET"
+    }
+
+    has_color() {
+        [ "$(tput colors)" -ge 8 ] &>/dev/null && [ -t 1 ]
+    }
+
+    # Returns the minimum of two numbers
+    min() {
+        if (($1 < $2)); then
+            echo "$1"
+        else
+            echo "$2"
+        fi
+    }
+
+    # Returns the maximum of two numbers
+    max() {
+        if (($1 > $2)); then
+            echo "$1"
+        else
+            echo "$2"
+        fi
+    }
+
+    # Clamps a value between a minimum and maximum
+    clamp() {
+        min "$(max "$1" "$2")" "$3"
+    }
+
+    deg_ctof() {
+        echo "$((($1 * 9) / 5 + 32))"
+    }
+}
+
 temp() {
     local temp
     temp=$(subfeature_f 'temp1_input')
 
     if $FAHRENHEIT; then temp=$(deg_ctof "$temp"); fi
-    
+
     echo "$temp"
 }
 
@@ -42,7 +90,7 @@ temp_max() {
     temp=$(subfeature_f 'temp1_max')
 
     if $FAHRENHEIT; then temp=$(deg_ctof "$temp"); fi
-    
+
     echo "$temp"
 }
 
@@ -56,23 +104,7 @@ temp_crit() {
 }
 
 subfeature_f() {
-    echo "$SENSORS" | awk -W posix "/$1/ {printf \"%.1f\", \$2; exit}"
-}
-
-min() {
-    echo "if ($1 < $2) $1 else $2" | bc
-}
-
-max() {
-    echo "if ($1 > $2) $1 else $2" | bc
-}
-
-clamp() {
-    min "$(max "$1" "$2")" "$3"
-}
-
-deg_ctof() {
-    echo "scale=1; $1 * (9 / 5) + 32" | bc
+    awk -W posix "/$1/ {printf \"%.1f\", \$2; exit}" <<< "$SENSORS"
 }
 
 temp_symbol() {
@@ -90,19 +122,18 @@ temp_symbol() {
 #   $2 - Color to interpolate to, as a hex triplet prefixed with #
 #   $3 - Amount of steps needed to get from start to end color
 interpolate_rgb() {
-    local -i steps=$3
-    local -a colors
+    local steps=$3 colors=() color1=$1 color2=$2
 
-    printf -v startR "%d" "0x${1:1:2}"
-    printf -v startG "%d" "0x${1:3:2}"
-    printf -v startB "%d" "0x${1:5:2}"
-    printf -v endR "%d" "0x${2:1:2}"
-    printf -v endG "%d" "0x${2:3:2}"
-    printf -v endB "%d" "0x${2:5:2}"
+    local startR=$(( 16#${color1:1:2} ))
+    local startG=$(( 16#${color1:3:2} ))
+    local startB=$(( 16#${color1:5:2} ))
+    local endR=$(( 16#${color2:1:2} ))
+    local endG=$(( 16#${color2:3:2} ))
+    local endB=$(( 16#${color2:5:2} ))
 
-    stepR=$(( (endR - startR) / steps ))
-    stepG=$(( (endG - startG) / steps ))
-    stepB=$(( (endB - startB) / steps ))
+    local stepR=$(( (endR - startR) / steps ))
+    local stepG=$(( (endG - startG) / steps ))
+    local stepB=$(( (endB - startB) / steps ))
 
     for i in $(seq 0 "$steps"); do
         local -i R=$(( startR + (stepR * i) ))
@@ -127,7 +158,7 @@ temp_color() {
 
     read -ra colors <<< "$(interpolate_rgb "$COLOR_GRADIENT_START" "$COLOR_GRADIENT_END" 10)"
 
-    if [ -n "$2" ]; then
+    if not_empty "$2"; then
         plookup "$1" "$2" "${colors[@]}"
     fi
 }
@@ -139,7 +170,7 @@ temp_color() {
 #   $2 - Number to get a percentage of
 #   $3 - An array of potential values
 plookup() {
-    if [ -z "$2" ] || [ -z "$3" ]; then
+    if empty "$2" || empty "$3"; then
         return
     fi
 
@@ -166,7 +197,7 @@ span() {
     local -A attribs
     local text="$*"
 
-    if [ -n "$FONT" ]; then attribs[font]="$FONT"; fi
+    if not_empty "$FONT"; then attribs[font]="$FONT"; fi
 
     if [ "$1" = "-c" ]; then
         # shellcheck disable=SC2034
@@ -203,82 +234,226 @@ multicolor() {
     local color="$2"
     local toggle=$4
 
-    if $toggle && [ -n "$3" ]; then
+    if $toggle && not_empty "$3"; then
         color="$3"
     fi
 
-    if [ -n "$color" ]; then
+    if not_empty "$color"; then
         span -c "$color" "$1"
     else
         span "$1"
     fi
 }
 
+define_commands() {
+    # Query a sensor.
+    #
+    # Arguments:
+    #   Sensor        (string) Sensor to query.
+    query_sensor() {
+        local sensor=${1:?$(error 'Sensor is required')}
+
+        SENSORS=$(sensors -u "$sensor")
+        temp=$(temp)
+
+        if isset OVERRIDE_MAX_TEMP; then
+            temp_max="$OVERRIDE_MAX_TEMP"
+        else
+            temp_max=$(temp_max)
+        fi
+
+        if isset OVERRIDE_CRIT_TEMP; then
+            temp_crit="$OVERRIDE_CRIT_TEMP"
+        else
+            temp_crit=$(temp_crit)
+        fi
+
+        temp_color=$(temp_color "$temp" "$temp_max")
+        colored_temp=$(multicolor "${temp}$(temp_symbol)" "$COLOR_TEMP" "$temp_color" $GRADIENT)
+
+        echo -e "$colored_temp\n$colored_temp\n"
+
+        if isset temp_crit && [[ $(temp_gt_eq "$temp" "$temp_crit") ]]; then
+            EXITCODE="$EX_URGENT"
+        elif isset temp_max && [[ $(temp_gt_eq "$temp" "$temp_max") ]]; then
+            EXITCODE="$EX_URGENT"
+        fi
+    }
+}
+
 # Display program usage
 usage() {
-    echo -e "Usage: $0 [options]
-Display a temperature indicator using lm_sensors for i3blocks.\n
-Options:
-  -s\t\t\tsensor to query
-  -f\t\t\tdisplay temperatures in fahrenheit
-  -G\t\t\tdisable color gradient
-  -c <temp>\t\toverride critical temperature
-  -m <temp>\t\toverride maximum temperature
-  -h\t\t\tdisplay this help and exit
-" 1>&2
-    exit 1
+    cat <<-EOF 1>&2
+Usage: $0 [<options>] <command> [<args>]
+
+Display a temperature indicator using lm_sensors for i3blocks.
+
+${COLOR_YELLOW}Commands:${COLOR_RESET}
+  ${COLOR_GREEN}query <sensor>${COLOR_RESET}            query sensor
+  ${COLOR_GREEN}help${COLOR_RESET}                      display help
+
+${COLOR_YELLOW}Options:${COLOR_RESET}
+  -f            display temperatures in fahrenheit
+  -G            disable color gradient
+  -c <temp>     override critical temperature
+  -m <temp>     override maximum temperature
+  -h            display this help and exit
+EOF
+    exit "$EX_USAGE"
 }
 
 temp_gt_eq() {
     (( ${1%.*} >= ${2%.*} ))
 }
 
+setup_color() {
+    if has_color; then
+        COLOR_RESET=$'\033[0m'
+        COLOR_RED=$'\033[0;31m'
+        COLOR_GREEN=$'\033[0;32m'
+        COLOR_YELLOW=$'\033[0;33m'
+        COLOR_MAGENTA=$'\033[0;35m'
+        COLOR_CYAN=$'\033[0;36m'
+    fi
+}
+
+# Rearrange all options to place flags first
+# Author: greycat
+# URL: https://mywiki.wooledge.org/ComplexOptionParsing
+arrange_opts() {
+    local flags args optstr=$1
+    shift
+
+    while (($#)); do
+        case $1 in
+            --)
+                args+=("$@")
+                break;
+                ;;
+            -*)
+                flags+=("$1")
+                if [[ $optstr == *"${1: -1}:"* ]]; then
+                    flags+=("$2")
+                    shift
+                fi
+                ;;
+            *)
+                args+=("$1")
+                ;;
+        esac
+        shift
+    done
+    OPTARR=("${flags[@]}" "${args[@]}")
+}
+
+parse_opts() {
+    local optstring=c:C:E:f:F:GhHm:S:t:
+
+    arrange_opts "$optstring" "$@"
+    set -- "${OPTARR[@]}"
+
+    OPTIND=1
+
+    while getopts "$optstring" opt; do
+        case "$opt" in
+            c    ) OVERRIDE_CRIT_TEMP=$OPTARG ;;
+            C    ) SYMBOL_C=$OPTARG ;;
+            E    ) COLOR_GRADIENT_END=$OPTARG ;;
+            f    ) FONT=$OPTARG ;;
+            F    ) SYMBOL_F=$OPTARG ;;
+            G    ) GRADIENT=false ;;
+            H    ) FAHRENHEIT=true ;;
+            m    ) OVERRIDE_MAX_TEMP=$OPTARG ;;
+            S    ) COLOR_GRADIENT_START=$OPTARG ;;
+            t    ) COLOR_TEMP=$OPTARG ;;
+            h | *) usage ;;
+        esac
+    done
+
+    read -ra CMDARGS <<< "${OPTARR[@]:$((OPTIND-1))}"
+}
+
+exec_command() {
+    IFS=' ' read -ra ARGS <<< "$1"
+    set -- "${ARGS[@]}"
+
+    COMMAND=${1:?$(error 'A command is required')}
+    shift
+
+    case "$COMMAND" in
+        query)
+            case "$#" in
+                1)
+                    SENSOR="$1"
+                    ;;
+                *)
+                    if empty "$SENSOR"; then
+                        usage
+                    fi
+                    ;;
+            esac
+
+            query_sensor "$SENSOR"
+            ;;
+        output)
+            case "$#" in 0) usage ;; esac
+            # output_volume "$*"
+            exit "${EXITCODE:-$EX_OK}"
+            ;;
+        # outputs)
+        #     list_output_formats
+        #     ;;
+        *)
+            usage
+            ;;
+    esac
+}
+
 ###############################################################################
 
-while getopts "c:C:E:f:F:GhHm:s:S:t:" o; do
-    case "$o" in
-        c) OVERRIDE_CRIT_TEMP="${OPTARG}" ;;
-        C) SYMBOL_C="${OPTARG}" ;;
-        E) COLOR_GRADIENT_END="${OPTARG}" ;;
-        f) FONT="${OPTARG}" ;;
-        F) SYMBOL_F="${OPTARG}" ;;
-        G) GRADIENT=false ;;
-        H) FAHRENHEIT=true ;;
-        m) OVERRIDE_MAX_TEMP="${OPTARG}" ;;
-        s) SENSOR="${OPTARG}" ;;
-        S) COLOR_GRADIENT_START="${OPTARG}" ;;
-        t) COLOR_TEMP="${OPTARG}" ;;
-        h | *) usage ;;
-    esac
-done
-shift $((OPTIND-1)) # Shift off options and optional --
+main() {
+    # Getopt parsing variables
+    declare OPTIND
+    declare -a OPTARR CMDARGS
 
-if [ -z "$SENSOR" ]; then
-    echo "No sensor defined"
-    exit 1
-fi
+    ###########################################################
+    # Non-command line option variables
+    ###########################################################
 
-SENSORS=$(sensors -u "$SENSOR")
-temp=$(temp)
+    # Exit codes
+    declare -ir \
+        EX_OK=0 \
+        EX_URGENT=33 \
+        EX_USAGE=64
 
-if [[ -v OVERRIDE_MAX_TEMP ]]; then
-  temp_max="$OVERRIDE_MAX_TEMP"
-else 
-  temp_max=$(temp_max)
-fi
+    # Main program exit code
+    declare -i EXITCODE=$EX_OK
 
-if [[ -v OVERRIDE_CRIT_TEMP ]]; then
-  temp_crit="$OVERRIDE_CRIT_TEMP"
-else 
-  temp_crit=$(temp_crit)
-fi
+    declare \
+        COLOR_RESET \
+        COLOR_RED \
+        COLOR_GREEN \
+        COLOR_YELLOW \
+        COLOR_MAGENTA \
+        COLOR_CYAN
 
-temp_color=$(temp_color "$temp" "$temp_max")
-colored_temp=$(multicolor "${temp}$(temp_symbol)" "$COLOR_TEMP" "$temp_color" $GRADIENT)
+    ###########################################################
+    # Command line option variables
+    ###########################################################
 
-echo -e "$colored_temp\n$colored_temp\n"
+    declare \
+        COMMAND
 
-[[ -v $temp_crit && $(temp_gt_eq "$temp" "$temp_crit") ]] && exit 33
-[[ -v $temp_max && $(temp_gt_eq "$temp" "$temp_max") ]] && exit 34
+    define_helpers
+    define_commands
 
-exit 0
+    setup_color
+
+    parse_opts "$@"
+
+    exec_command "${CMDARGS[*]}"
+
+    exit ${EXITCODE:-$EX_OK}
+}
+
+main "$@"
