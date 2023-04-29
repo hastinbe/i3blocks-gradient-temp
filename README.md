@@ -18,16 +18,20 @@ A temperature indicator for [i3blocks], colored according to heat.
 
 ### Command-line options
 ```
-Usage: ./gradient-temp [options]
+Usage: ./gradient-temp [<options>] <command> [<args>]
+
 Display a temperature indicator using lm_sensors for i3blocks.
 
+Commands:
+  query <sensor>            query sensor
+  help                      display help
+
 Options:
-  -s			sensor to query
-  -f			display temperatures in fahrenheit
-  -G			disable color gradient
-  -c <temp>		override critical temperature
-  -m <temp>		override maximum temperature
-  -h			display this help and exit
+  -f            display temperatures in fahrenheit
+  -G            disable color gradient
+  -c <temp>     override critical temperature
+  -m <temp>     override maximum temperature
+  -h            display this help and exit
 ```
 
 ### Guide
