@@ -175,10 +175,10 @@ plookup() {
     fi
 
     local table=( "${@:3}" )
-    local number2=${2%.*}
     local temp
-    temp=$(min "${1%.*}" "$number2")
-    local percent_max=$(( temp * number2 / 100 ))
+    temp=$(min "${1%.*}" "${2%.*}")
+
+    local percent_max=$(( temp * ${2%.*} / 100 ))
     local index=$(( percent_max * ${#table[@]} / 100 ))
 
     index=$(clamp $index 0 $(( ${#table[@]} - 1 )) )
@@ -200,8 +200,10 @@ span() {
     if not_empty "$FONT"; then attribs[font]="$FONT"; fi
 
     if [ "$1" = "-c" ]; then
-        # shellcheck disable=SC2034
-        attribs[color]="$2"
+        if not_empty "$2"; then
+            # shellcheck disable=SC2034
+            attribs[color]="$2"
+        fi
         text="${*:3}"
     fi
 
@@ -213,9 +215,9 @@ span() {
 # Arguments:
 #   $1 - An associative array of attribute-value pairs
 build_attribs() {
-    local -n array=$1
-    for k in "${!array[@]}"; do
-        echo -n " $k='${array[$k]}'"
+    local -n attrs=$1
+    for key in "${!attrs[@]}"; do
+        echo -n " $key='${attrs[$key]}'"
     done
     echo
 }
