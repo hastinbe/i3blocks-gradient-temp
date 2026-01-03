@@ -185,7 +185,23 @@ temp_symbol() {
 
     # Convert HTML entities to Unicode for polybar
     if [ "$BAR_TYPE" = "polybar" ]; then
-        html_entity_to_unicode "$symbol"
+        local unicode_symbol
+        unicode_symbol=$(html_entity_to_unicode "$symbol")
+
+        # Use more compatible symbols for polybar if the font doesn't support the original
+        # ℃ (U+2103) -> °C (degree sign + C) which is more widely supported
+        # ℉ (U+2109) -> °F (degree sign + F) which is more widely supported
+        case "$unicode_symbol" in
+            "℃")
+                echo "°C"
+                ;;
+            "℉")
+                echo "°F"
+                ;;
+            *)
+                echo "$unicode_symbol"
+                ;;
+        esac
     else
         echo "$symbol"
     fi
