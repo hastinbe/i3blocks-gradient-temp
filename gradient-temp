@@ -26,6 +26,7 @@ COLOR_GRADIENT_START=${COLOR_GRADIENT_START:-"#0000FF"}
 COLOR_GRADIENT_END=${COLOR_GRADIENT_END:-"#FF0000"}
 SYMBOL_C=${SYMBOL_C:-"&#x2103;"}
 SYMBOL_F=${SYMBOL_F:-"&#x2109;"}
+TEMP_SUBFEATURE=${TEMP_SUBFEATURE:-"temp1"}
 
 define_helpers() {
     empty() {
@@ -74,11 +75,31 @@ define_helpers() {
     deg_ctof() {
         echo "$((($1 * 9) / 5 + 32))"
     }
+
+    # Validate hex color format (#RRGGBB)
+    is_valid_hex_color() {
+        [[ $1 =~ ^#[0-9A-Fa-f]{6}$ ]]
+    }
+
+    # Validate that a number is a valid temperature
+    is_valid_temp() {
+        [[ $1 =~ ^-?[0-9]+\.?[0-9]*$ ]]
+    }
+
+    # Check if command exists
+    command_exists() {
+        command -v "$1" >/dev/null 2>&1
+    }
 }
 
 temp() {
     local temp
-    temp=$(subfeature_f 'temp1_input')
+    temp=$(subfeature_f "${TEMP_SUBFEATURE}_input")
+
+    if empty "$temp"; then
+        error "Failed to read temperature from sensor (${TEMP_SUBFEATURE}_input)"
+        return 1
+    fi
 
     if $FAHRENHEIT; then temp=$(deg_ctof "$temp"); fi
 
@@ -87,7 +108,7 @@ temp() {
 
 temp_max() {
     local temp
-    temp=$(subfeature_f 'temp1_max')
+    temp=$(subfeature_f "${TEMP_SUBFEATURE}_max")
 
     if $FAHRENHEIT; then temp=$(deg_ctof "$temp"); fi
 
@@ -96,7 +117,7 @@ temp_max() {
 
 temp_crit() {
     local temp
-    temp=$(subfeature_f 'temp1_crit')
+    temp=$(subfeature_f "${TEMP_SUBFEATURE}_crit")
 
     if $FAHRENHEIT; then temp=$(deg_ctof "$temp"); fi
 
@@ -124,6 +145,16 @@ temp_symbol() {
 interpolate_rgb() {
     local steps=$3 colors=() color1=$1 color2=$2
 
+    if ! is_valid_hex_color "$color1"; then
+        error "Invalid start color format: $color1 (expected #RRGGBB)"
+        return 1
+    fi
+
+    if ! is_valid_hex_color "$color2"; then
+        error "Invalid end color format: $color2 (expected #RRGGBB)"
+        return 1
+    fi
+
     local startR=$(( 16#${color1:1:2} ))
     local startG=$(( 16#${color1:3:2} ))
     local startB=$(( 16#${color1:5:2} ))
@@ -143,8 +174,6 @@ interpolate_rgb() {
         colors+=( "$(printf "#%02x%02x%02x\n" $R $G $B)" )
     done
 
-    colors+=( "$(printf "#%02x%02x%02x\n" "$endR" "$endG" "$endB")" )
-
     echo "${colors[@]}"
 }
 
@@ -155,8 +184,14 @@ interpolate_rgb() {
 #   $2 - Maximum temperature
 temp_color() {
     local colors
+    local cache_key="${COLOR_GRADIENT_START}:${COLOR_GRADIENT_END}"
 
-    read -ra colors <<< "$(interpolate_rgb "$COLOR_GRADIENT_START" "$COLOR_GRADIENT_END" 10)"
+    # Cache gradient colors to avoid recomputation
+    if [[ -z ${GRADIENT_CACHE[$cache_key]:-} ]]; then
+        GRADIENT_CACHE[$cache_key]=$(interpolate_rgb "$COLOR_GRADIENT_START" "$COLOR_GRADIENT_END" 10)
+    fi
+
+    read -ra colors <<< "${GRADIENT_CACHE[$cache_key]}"
 
     if not_empty "$2"; then
         plookup "$1" "$2" "${colors[@]}"
@@ -178,8 +213,10 @@ plookup() {
     local temp
     temp=$(min "${1%.*}" "${2%.*}")
 
-    local percent_max=$(( temp * ${2%.*} / 100 ))
-    local index=$(( percent_max * ${#table[@]} / 100 ))
+    # Calculate percentage: (temp / max_temp) * 100
+    # Then map to array index: (percentage / 100) * array_length
+    local percent=$(( temp * 100 / ${2%.*} ))
+    local index=$(( percent * ${#table[@]} / 100 ))
 
     index=$(clamp $index 0 $(( ${#table[@]} - 1 )) )
 
@@ -248,23 +285,66 @@ multicolor() {
 }
 
 define_commands() {
+    # List available sensors
+    list_sensors() {
+        if ! command_exists sensors; then
+            error "sensors command not found. Please install lm_sensors."
+            exit 1
+        fi
+
+        echo "Available sensors:"
+        sensors -u 2>/dev/null | awk -W posix '
+            /^[^[:space:]]+:/ {
+                sensor = $0
+                sub(/:$/, "", sensor)
+                print "  " sensor
+            }
+        ' || {
+            error "Failed to list sensors"
+            exit 1
+        }
+    }
+
     # Query a sensor.
     #
     # Arguments:
     #   Sensor        (string) Sensor to query.
     query_sensor() {
         local sensor=${1:?$(error 'Sensor is required')}
+        local temp temp_max temp_crit temp_color colored_temp
 
-        SENSORS=$(sensors -u "$sensor")
+        if ! command_exists sensors; then
+            error "sensors command not found. Please install lm_sensors."
+            exit 1
+        fi
+
+        SENSORS=$(sensors -u "$sensor" 2>/dev/null)
+        if [ -z "$SENSORS" ]; then
+            error "Failed to query sensor: $sensor"
+            exit 1
+        fi
+
         temp=$(temp)
+        if [ $? -ne 0 ] || empty "$temp"; then
+            error "Failed to read temperature"
+            exit 1
+        fi
 
         if isset OVERRIDE_MAX_TEMP; then
+            if ! is_valid_temp "$OVERRIDE_MAX_TEMP"; then
+                error "Invalid maximum temperature: $OVERRIDE_MAX_TEMP"
+                exit 1
+            fi
             temp_max="$OVERRIDE_MAX_TEMP"
         else
             temp_max=$(temp_max)
         fi
 
         if isset OVERRIDE_CRIT_TEMP; then
+            if ! is_valid_temp "$OVERRIDE_CRIT_TEMP"; then
+                error "Invalid critical temperature: $OVERRIDE_CRIT_TEMP"
+                exit 1
+            fi
             temp_crit="$OVERRIDE_CRIT_TEMP"
         else
             temp_crit=$(temp_crit)
@@ -275,9 +355,9 @@ define_commands() {
 
         echo -e "$colored_temp\n$colored_temp\n"
 
-        if isset temp_crit && [[ $(temp_gt_eq "$temp" "$temp_crit") ]]; then
+        if not_empty "$temp_crit" && temp_gt_eq "$temp" "$temp_crit"; then
             EXITCODE="$EX_URGENT"
-        elif isset temp_max && [[ $(temp_gt_eq "$temp" "$temp_max") ]]; then
+        elif not_empty "$temp_max" && temp_gt_eq "$temp" "$temp_max"; then
             EXITCODE="$EX_URGENT"
         fi
     }
@@ -292,13 +372,21 @@ Display a temperature indicator using lm_sensors for i3blocks.
 
 ${COLOR_YELLOW}Commands:${COLOR_RESET}
   ${COLOR_GREEN}query <sensor>${COLOR_RESET}            query sensor
+  ${COLOR_GREEN}list${COLOR_RESET}                      list available sensors
   ${COLOR_GREEN}help${COLOR_RESET}                      display help
 
 ${COLOR_YELLOW}Options:${COLOR_RESET}
-  -f            display temperatures in fahrenheit
+  -H            display temperatures in fahrenheit
   -G            disable color gradient
   -c <temp>     override critical temperature
   -m <temp>     override maximum temperature
+  -f <font>     set font for text and symbols
+  -t <color>    set color when gradient is disabled
+  -S <#color>   set gradient start color (hex triplet)
+  -E <#color>   set gradient end color (hex triplet)
+  -C <symbol>   set celsius symbol
+  -F <symbol>   set fahrenheit symbol
+  -T <feature>  set temperature subfeature (default: temp1)
   -h            display this help and exit
 EOF
     exit "$EX_USAGE"
@@ -349,7 +437,7 @@ arrange_opts() {
 }
 
 parse_opts() {
-    local optstring=c:C:E:f:F:GhHm:S:t:
+    local optstring=c:C:E:f:F:GhHm:S:t:T:
 
     arrange_opts "$optstring" "$@"
     set -- "${OPTARR[@]}"
@@ -368,6 +456,7 @@ parse_opts() {
             m    ) OVERRIDE_MAX_TEMP=$OPTARG ;;
             S    ) COLOR_GRADIENT_START=$OPTARG ;;
             t    ) COLOR_TEMP=$OPTARG ;;
+            T    ) TEMP_SUBFEATURE=$OPTARG ;;
             h | *) usage ;;
         esac
     done
@@ -396,6 +485,9 @@ exec_command() {
             esac
 
             query_sensor "$SENSOR"
+            ;;
+        list)
+            list_sensors
             ;;
         output)
             case "$#" in 0) usage ;; esac
@@ -430,6 +522,9 @@ main() {
 
     # Main program exit code
     declare -i EXITCODE=$EX_OK
+
+    # Gradient color cache
+    declare -A GRADIENT_CACHE
 
     declare \
         COLOR_RESET \
