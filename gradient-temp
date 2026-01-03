@@ -2,7 +2,7 @@
 #
 #  gradient-temp
 #
-#  A temperature indicator for i3blocks, colored according to heat
+#  A temperature indicator for i3blocks and polybar, colored according to heat
 #
 #  Requires:
 #    awk (POSIX compatible)
@@ -27,6 +27,7 @@ COLOR_GRADIENT_END=${COLOR_GRADIENT_END:-"#FF0000"}
 SYMBOL_C=${SYMBOL_C:-"&#x2103;"}
 SYMBOL_F=${SYMBOL_F:-"&#x2109;"}
 TEMP_SUBFEATURE=${TEMP_SUBFEATURE:-"temp1"}
+BAR_TYPE=${BAR_TYPE:-"i3blocks"}
 
 define_helpers() {
     empty() {
@@ -90,6 +91,52 @@ define_helpers() {
     command_exists() {
         command -v "$1" >/dev/null 2>&1
     }
+
+    # Convert HTML entity to Unicode character
+    # Arguments:
+    #   $1 - HTML entity (e.g., &#x2103; or &#8451;)
+    html_entity_to_unicode() {
+        local entity="$1"
+        local code
+
+        # Handle hex entities like &#x2103;
+        if [[ $entity =~ ^\&\#x([0-9A-Fa-f]+)\;$ ]]; then
+            code="${BASH_REMATCH[1]}"
+            # Convert hex to decimal
+            code=$((16#$code))
+        # Handle decimal entities like &#8451;
+        elif [[ $entity =~ ^\&\#([0-9]+)\;$ ]]; then
+            code="${BASH_REMATCH[1]}"
+        else
+            # Not an HTML entity, return as-is
+            echo "$entity"
+            return
+        fi
+
+        # Convert Unicode code point to UTF-8 bytes and output
+        if [ "$code" -le 127 ]; then
+            # ASCII: single byte
+            printf "\\$(printf '%03o' "$code")"
+        elif [ "$code" -le 2047 ]; then
+            # 2-byte UTF-8
+            local byte1=$((0xC0 | (code >> 6)))
+            local byte2=$((0x80 | (code & 0x3F)))
+            printf "\\$(printf '%03o' "$byte1")\\$(printf '%03o' "$byte2")"
+        elif [ "$code" -le 65535 ]; then
+            # 3-byte UTF-8
+            local byte1=$((0xE0 | (code >> 12)))
+            local byte2=$((0x80 | ((code >> 6) & 0x3F)))
+            local byte3=$((0x80 | (code & 0x3F)))
+            printf "\\$(printf '%03o' "$byte1")\\$(printf '%03o' "$byte2")\\$(printf '%03o' "$byte3")"
+        else
+            # 4-byte UTF-8 (not needed for common symbols)
+            local byte1=$((0xF0 | (code >> 18)))
+            local byte2=$((0x80 | ((code >> 12) & 0x3F)))
+            local byte3=$((0x80 | ((code >> 6) & 0x3F)))
+            local byte4=$((0x80 | (code & 0x3F)))
+            printf "\\$(printf '%03o' "$byte1")\\$(printf '%03o' "$byte2")\\$(printf '%03o' "$byte3")\\$(printf '%03o' "$byte4")"
+        fi
+    }
 }
 
 temp() {
@@ -129,10 +176,18 @@ subfeature_f() {
 }
 
 temp_symbol() {
+    local symbol
     if $FAHRENHEIT; then
-        echo "$SYMBOL_F"
+        symbol="$SYMBOL_F"
     else
-        echo "$SYMBOL_C"
+        symbol="$SYMBOL_C"
+    fi
+
+    # Convert HTML entities to Unicode for polybar
+    if [ "$BAR_TYPE" = "polybar" ]; then
+        html_entity_to_unicode "$symbol"
+    else
+        echo "$symbol"
     fi
 }
 
@@ -223,7 +278,7 @@ plookup() {
     echo "${table[$index]}"
 }
 
-# Output text wrapped in a span element
+# Output text wrapped in a span element (i3blocks) or polybar format
 #
 # Options:
 #   -c <color>  To specify a text color
@@ -233,18 +288,40 @@ plookup() {
 span() {
     local -A attribs
     local text="$*"
-
-    if not_empty "$FONT"; then attribs[font]="$FONT"; fi
+    local color=""
 
     if [ "$1" = "-c" ]; then
         if not_empty "$2"; then
-            # shellcheck disable=SC2034
-            attribs[color]="$2"
+            color="$2"
         fi
         text="${*:3}"
     fi
 
-    echo "<span$(build_attribs attribs)>$text</span>"
+    # Output format based on bar type
+    if [ "$BAR_TYPE" = "polybar" ]; then
+        # Polybar format: %{F#color}text%{F-}
+        local output=""
+        if not_empty "$color"; then
+            output="%{F$color}"
+        fi
+        if not_empty "$FONT"; then
+            # Polybar font tags: %{T#} where # is font index
+            # For simplicity, we'll just output the text
+            # Font configuration should be done in polybar config
+            output="${output}$text"
+        else
+            output="${output}$text"
+        fi
+        if not_empty "$color"; then
+            output="${output}%{F-}"
+        fi
+        echo "$output"
+    else
+        # i3blocks Pango format: <span attributes>text</span>
+        if not_empty "$FONT"; then attribs[font]="$FONT"; fi
+        if not_empty "$color"; then attribs[color]="$color"; fi
+        echo "<span$(build_attribs attribs)>$text</span>"
+    fi
 }
 
 # Builds html element attributes
@@ -368,7 +445,7 @@ usage() {
     cat <<-EOF 1>&2
 Usage: $0 [<options>] <command> [<args>]
 
-Display a temperature indicator using lm_sensors for i3blocks.
+Display a temperature indicator using lm_sensors for i3blocks or polybar.
 
 ${COLOR_YELLOW}Commands:${COLOR_RESET}
   ${COLOR_GREEN}query <sensor>${COLOR_RESET}            query sensor
@@ -376,6 +453,7 @@ ${COLOR_YELLOW}Commands:${COLOR_RESET}
   ${COLOR_GREEN}help${COLOR_RESET}                      display help
 
 ${COLOR_YELLOW}Options:${COLOR_RESET}
+  -b <type>     set bar type: i3blocks (default) or polybar
   -H            display temperatures in fahrenheit
   -G            disable color gradient
   -c <temp>     override critical temperature
@@ -437,7 +515,7 @@ arrange_opts() {
 }
 
 parse_opts() {
-    local optstring=c:C:E:f:F:GhHm:S:t:T:
+    local optstring=b:c:C:E:f:F:GhHm:S:t:T:
 
     arrange_opts "$optstring" "$@"
     set -- "${OPTARR[@]}"
@@ -446,6 +524,7 @@ parse_opts() {
 
     while getopts "$optstring" opt; do
         case "$opt" in
+            b    ) BAR_TYPE=$OPTARG ;;
             c    ) OVERRIDE_CRIT_TEMP=$OPTARG ;;
             C    ) SYMBOL_C=$OPTARG ;;
             E    ) COLOR_GRADIENT_END=$OPTARG ;;

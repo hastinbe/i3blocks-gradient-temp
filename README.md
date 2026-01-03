@@ -2,7 +2,7 @@ gradient-temp
 =========
 [![License: GPL v2](https://img.shields.io/badge/License-GPL%20v2-blue.svg)][license]
 
-A temperature indicator for [i3blocks], colored according to heat.
+A temperature indicator for [i3blocks] and [polybar], colored according to heat.
 
 ![](example.png)
 
@@ -11,7 +11,7 @@ A temperature indicator for [i3blocks], colored according to heat.
 #### Requirements
 * awk (POSIX compatible)
 * bc
-* [i3blocks]
+* [i3blocks] or [polybar]
 
 #### Optional
 * fonts-font-awesome
@@ -20,17 +20,25 @@ A temperature indicator for [i3blocks], colored according to heat.
 ```
 Usage: ./gradient-temp [<options>] <command> [<args>]
 
-Display a temperature indicator using lm_sensors for i3blocks.
+Display a temperature indicator using lm_sensors for i3blocks or polybar.
 
 Commands:
   query <sensor>            query sensor
   help                      display help
 
 Options:
-  -f            display temperatures in fahrenheit
+  -b <type>     set bar type: i3blocks (default) or polybar
+  -H            display temperatures in fahrenheit
   -G            disable color gradient
   -c <temp>     override critical temperature
   -m <temp>     override maximum temperature
+  -f <font>     set font for text and symbols
+  -t <color>    set color when gradient is disabled
+  -S <#color>   set gradient start color (hex triplet)
+  -E <#color>   set gradient end color (hex triplet)
+  -C <symbol>   set celsius symbol
+  -F <symbol>   set fahrenheit symbol
+  -T <feature>  set temperature subfeature (default: temp1)
   -h            display this help and exit
 ```
 
@@ -59,13 +67,52 @@ instance=__REPLACE_ME__
 
 Set the `instance` variable to the sensor to monitor, see `sensors -u`.
 
+### Polybar Configuration
+
+For polybar, add the following to your polybar config file:
+
+```INI
+[module/temperature]
+type = custom/script
+exec = /path/to/gradient-temp query __REPLACE_ME__
+interval = 10
+format-prefix = "🌡 "
+format-prefix-foreground = ${colors.foreground-alt}
+
+# Optional: Set bar type to polybar
+# BAR_TYPE=polybar
+
+# Optional configuration variables:
+# GRADIENT=true
+# FAHRENHEIT=false
+# COLOR_TEMP=white
+# COLOR_GRADIENT_START=#0000FF
+# COLOR_GRADIENT_END=#FF0000
+# SYMBOL_C=°C  (HTML entities like &#x2103; are automatically converted for polybar)
+# SYMBOL_F=°F  (HTML entities like &#x2109; are automatically converted for polybar)
+# OVERRIDE_CRIT_TEMP=90
+# OVERRIDE_MAX_TEMP=100
+```
+
+Or use environment variables in your polybar config:
+
+```INI
+[module/temperature]
+type = custom/script
+exec = BAR_TYPE=polybar /path/to/gradient-temp query __REPLACE_ME__
+interval = 10
+```
+
+Replace `__REPLACE_ME__` with the sensor to monitor (see `sensors -u`).
+
 ## Customization
 
 The following can be set in your i3blocks.conf in newer versions if [i3blocks], in older versions (<= 1.4-4) you can customize using the program options. The following are configurable:
 
 Variable | Type | Option | Description
 ------------ | ------------ | ------------- | -------------
-FONT | string | -f &lt;font&gt; | Font for text and symbols
+BAR_TYPE | string | -b &lt;type&gt; | Bar type: i3blocks (default) or polybar
+FONT | string | -f &lt;font&gt; | Font for text and symbols (i3blocks only)
 SENSOR | string | -s &lt;sensor&gt; | The sensor to read
 GRADIENT | boolean | -G | Whether or not to use the color gradient
 FAHRENHEIT | boolean | -H | Whether or not to use fahrenheit
@@ -84,4 +131,5 @@ OVERRIDE_MAX_TEMP | float | -m &lt;temp&gt; | Override maximum temperature
 Copyright (C) 1989, 1991 Free Software Foundation, Inc.
 
 [i3blocks]: https://vivien.github.io/i3blocks/
+[polybar]: https://github.com/polybar/polybar
 [license]: https://www.gnu.org/licenses/gpl-2.0.en.html
